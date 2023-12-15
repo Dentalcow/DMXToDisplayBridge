@@ -1,9 +1,10 @@
 using System;
 using System.Net;
 using System.Drawing;
-using System.Windows.Forms; // Correct namespace for Form and Application
+using System.Windows.Forms;
 using ArtDotNet;
 using DMXToDisplayBridge;
+using System.Net.NetworkInformation;
 
 namespace ArtDotNetClient
 {
@@ -18,50 +19,51 @@ namespace ArtDotNetClient
 
         public static void Main(string[] args)
         {
-
             using (var settingsForm = new SettingsDialogForm())
             {
-                // Show the settings dialog form modally
                 if (settingsForm.ShowDialog() == DialogResult.OK)
                 {
-                    // Retrieve settings from the dialog form
-                    int subnet = settingsForm.Subnet;
-                    int universe = settingsForm.Universe;
-                    int startAddress = settingsForm.StartingAddress;
+                    subnet = settingsForm.Subnet;
+                    universe = settingsForm.Universe;
+                    startAddress = settingsForm.StartingAddress;
                     Screen selectedMonitor = settingsForm.SelectedMonitor;
 
-                    // Proceed with the rest of your application logic
                     var controller = new ArtNetController();
-                    controller.Address = IPAddress.Loopback;
-                    // ... configure your controller and main application form
+                    string selectedInterfaceName = settingsForm.SelectedNetworkInterfaceName;
+                    IPAddress ipAddress = GetIPAddressFromInterfaceName(selectedInterfaceName);
 
-                    // Example: Position the form on the selected monitor
-                    Form mainForm = new Form();
-                    mainForm.StartPosition = FormStartPosition.Manual;
-                    mainForm.Bounds = selectedMonitor.Bounds;
-                    // ... other form configurations
+                    // Check if an IP address was found before setting it
+                    if (ipAddress != null)
+                    {
+                        controller.Address = ipAddress;
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("No active network interface found. Exiting...");
+                        return; // Exit the application or handle the error appropriately
+                    }
 
-                    // Initialize GUI
                     Application.EnableVisualStyles();
                     Form displayForm = new Form();
+                    displayForm.StartPosition = FormStartPosition.Manual;
+                    displayForm.WindowState = FormWindowState.Normal;
+                    displayForm.Bounds = selectedMonitor.Bounds;
                     displayForm.Text = "Color Display";
-                    displayForm.FormBorderStyle = FormBorderStyle.None; // No borders
-                    displayForm.WindowState = FormWindowState.Maximized; // Maximize the window
-                    displayForm.TopMost = true; // Ensure the form is topmost
+                    displayForm.FormBorderStyle = FormBorderStyle.None;
+                    displayForm.WindowState = FormWindowState.Maximized;
+                    displayForm.TopMost = true;
 
                     controller.DmxPacketReceived += (s, p) =>
                     {
                         if (p.SubUni != (universe * 16 + subnet))
                             return;
 
-                        // Copy DMX data to the local array
                         Array.Copy(p.Data, dmxData, p.Length);
 
-                        int channelIndex = startAddress - 1; // Calculate the index for the starting address
+                        int channelIndex = startAddress - 1;
 
                         for (int i = 0; i < 4 && channelIndex < p.Length; i++, channelIndex++)
                         {
-                            // Assign values to red, green, blue, and white variables based on channel index
                             switch (i)
                             {
                                 case 0:
@@ -74,31 +76,60 @@ namespace ArtDotNetClient
                                     green = dmxData[channelIndex];
                                     break;
                                 case 3:
-                                    blue = dmxData[channelIndex]; // white channel used as dimmer
+                                    blue = dmxData[channelIndex];
                                     break;
                             }
                         }
 
-                        // Calculate dimming factor (0 to 1)
                         float dimmer = dim / 255f;
-
-                        // Apply dimming to RGB channels
                         red = (int)(red * dimmer);
                         green = (int)(green * dimmer);
                         blue = (int)(blue * dimmer);
-
-                        // Set the background color of the form with dimmed RGB values
                         displayForm.BackColor = Color.FromArgb(red, green, blue);
                     };
 
                     controller.Start();
-
-                    // Run the application
                     Application.Run(displayForm);
-
                     controller.Stop();
                 }
             }
+        }
+        private static IPAddress GetIPAddressFromInterfaceName(string interfaceName)
+        {
+            var networkInterface = NetworkInterface.GetAllNetworkInterfaces()
+                .FirstOrDefault(ni => ni.Name == interfaceName);
+
+            if (networkInterface != null)
+            {
+                var address = networkInterface.GetIPProperties()
+                    .UnicastAddresses
+                    .FirstOrDefault(ua => ua.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    ?.Address;
+
+                return address;
+            }
+
+            return null;
+        }
+
+        private static IPAddress GetActiveNetworkInterfaceIPAddress()
+        {
+            foreach (NetworkInterface netInterface in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (netInterface.OperationalStatus == OperationalStatus.Up &&
+                    netInterface.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                {
+                    IPInterfaceProperties ipProps = netInterface.GetIPProperties();
+                    foreach (UnicastIPAddressInformation addr in ipProps.UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        {
+                            return addr.Address;
+                        }
+                    }
+                }
+            }
+            return null;
         }
     }
 }

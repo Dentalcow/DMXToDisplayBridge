@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -19,6 +20,9 @@ namespace DMXToDisplayBridge
         public SettingsDialogForm()
         {
             InitializeComponent();
+
+            PopulateNetworkInterfaces();
+
 
             // Monitor ComboBox setup
             foreach (var screen in Screen.AllScreens)
@@ -48,6 +52,23 @@ namespace DMXToDisplayBridge
         {
 
         }
+
+        private void PopulateNetworkInterfaces()
+        {
+            foreach (NetworkInterface netInterface in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (netInterface.OperationalStatus == OperationalStatus.Up &&
+                    netInterface.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                {
+                    networkInterfaceComboBox.Items.Add(netInterface.Name);
+                }
+            }
+
+            if (networkInterfaceComboBox.Items.Count > 0)
+                networkInterfaceComboBox.SelectedIndex = 0;
+        }
+
+        public string SelectedNetworkInterfaceName => networkInterfaceComboBox.SelectedItem?.ToString();
     }
 }
 
